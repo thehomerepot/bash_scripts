@@ -310,14 +310,16 @@ class Service(SimpleService):
 
 				## Encoder Utilization
 				try:
-					enc_util[encUtil] = pynvml.nvmlDeviceGetEncoderUtilization(handle,encUtil,encSample)
+					encoder = pynvml.nvmlDeviceGetEncoderUtilization(handle)
+                    enc_util = encoder[0]
 				except Exception as e:
 					self.debug(str(e))
 					enc_util = None
 
 				## Decoder Utilization
 				try:
-					dec_util[decUtil] = pynvml.nvmlDeviceGetDecoderUtilization(handle,decUtil,decSample)
+					decoder = pynvml.nvmlDeviceGetDecoderUtilization(handle)
+                    dec_util = decoder[0]
 				except Exception as e:
 					self.debug(str(e))
 					dec_util = None
