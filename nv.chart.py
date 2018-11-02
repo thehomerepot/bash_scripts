@@ -12,6 +12,7 @@ Requirements:
 
 
 The MIT License (MIT)
+The MIT License (MIT)
 Copyright (c) 2016 Jan Arnold
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
@@ -311,7 +312,7 @@ class Service(SimpleService):
 				## Encoder Utilization
 				try:
 					encoder = pynvml.nvmlDeviceGetEncoderUtilization(handle)
-                    enc_util = encoder[0]
+					enc_util = encoder[0]
 				except Exception as e:
 					self.debug(str(e))
 					enc_util = None
@@ -319,7 +320,7 @@ class Service(SimpleService):
 				## Decoder Utilization
 				try:
 					decoder = pynvml.nvmlDeviceGetDecoderUtilization(handle)
-                    dec_util = decoder[0]
+					dec_util = decoder[0]
 				except Exception as e:
 					self.debug(str(e))
 					dec_util = None
