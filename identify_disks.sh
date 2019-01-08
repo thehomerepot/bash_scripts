@@ -1,137 +1,64 @@
 #!/bin/bash
+#--------------------------------------------------------------------------
+#   Name            : identify_disks.sh
+#   Purpose         : Gather information about the hard drives in your system
+#   Usage           : ./identify_drives.sh
+#--------------------------------------------------------------------------
+
 #Variable to keep track of version for auditing purposes
-SCRIPT_VERSION=0.1.0
+script_version=1.0.0
+
+#Set environment options
+#set -o errexit      # -e Any non-zero output will cause an automatic script failure
+#set -o pipefail     #    Any non-zero output in a pipeline will return a failure
+#set -o noclobber    # -C Prevent output redirection from overwriting an existing file
+#set -o nounset      # -u Prevent use of uninitialized variables
+#set -o xtrace       # -x Same as verbose but with variable expansion
 
 #--------------------------------------------------------------------------
-#     Name          : identify_disks.sh
-#     Purpose       : Gather information about the hard drives in your system
-#--------------------------------------------------------------------------
-
-#--------------------------------------------------------------------------
-#    FUNCTION       check_execution
-#    SYNTAX         check_execution <PID_FILE> <wait>
+#    FUNCTION       f_check_execution
+#    SYNTAX         f_check_execution <PID_FILE>
 #    DESCRIPTION    This function identifies if there is already an instance of this script running
 #                   0=Success
 #                   1=Failure
 #                   2=Error
 #--------------------------------------------------------------------------
-function check_execution
+f_check_execution()
 {
     #Validate the number of passed variables
     if [[ $# -ne 1 ]]
     then
         #Invalid number of arguments
         >&2 echo "Received an invalid number of arguments"
-        exit 2
+        return 2
     fi
 
     #Assign variables passed
-    typeset str_pid_file=$1
+    declare l_pid_file="${1}"; shift
 
-    #Use a file descriptor to track a file for locking so we can utilize flock
-    exec 9>${str_pid_file}
-
-    #Acquire an exclusive lock to file descriptor 9
-    flock -n 9 2>/dev/null
-    int_return_code=$?
-    #Check if there is already an intance of the script running
-    if [[ $int_return_code -ne 0 ]]
+    #Determine if we're locking or unlocking the passed file
+    if [[ "${l_pid_file:0:4}" = "STOP" ]]
     then
-        >&2 echo "An instance of ${SCRIPT_NAME} is already locked to ${str_pid_file}"
-        exit 1
-    fi
-}
+        #Remove any locks to prevent child processes from holding onto them
+        flock -u 9 1>/dev/null 2>&1 || (rc=$? && >&2 echo "File ${l_pid_file:4} could not be unlocked" && return $rc)
 
-#--------------------------------------------------------------------------
-#    FUNCTION       find_local_node_name
-#    SYNTAX         variable=$(find_local_node_name)
-#    DESCRIPTION    Finds the local node name and strips any FQDN
-#
-#    VARIABLE
-#    DEPENDENCIES   n/a
-#
-#    FUNCTION
-#    DEPENDENCIES   n/a
-#--------------------------------------------------------------------------
-function find_local_node_name
-{
-    #Setup variables
-    typeset str_local_node
-
-    #Get the local node name and strip any suffix
-    str_local_node=$(hostname -s | tr '[:upper:]' '[:lower:]')
-
-    #echo the str_local_node name
-    echo ${str_local_node}
-    return 0
-}
-
-#--------------------------------------------------------------------------
-#    FUNCTION       redirect_output
-#    SYNTAX         redirect_output <LOG_FILE>
-#    DESCRIPTION    Manages redirection/prepending of all stdOut/stdErr to a logfile and screen
-#
-#    VARIABLE
-#    DEPENDENCIES   init_call
-#
-#    FUNCTION
-#    DEPENDENCIES   n/a
-#--------------------------------------------------------------------------
-function redirect_output
-{
-    #Validate the number of passed variables
-    if [[ $# -lt 1 ]]
-    then
-        #Invalid number of arguments
-        >&2 echo "Received an invalid number of arguments"
-        exit 1
-    fi
-
-    typeset str_log_file=$1; shift
-
-    if [[ ${init_call} -eq 0 ]]
-    then
-        #Initial execution
-        init_call=1
-
-        #Save our stdOut/stdErr values
-        exec 3>&1
-        exec 4>&2
-    elif [[ -z ${init_call} ]]
-    then
-        #The required init_call global variable is not set
-        >&2 echo "The function redirect_output requires an init_call global variable set to 0"
-        exit 1
-    fi
-
-    #Restore stdOut/stdErr to normal
-    exec 1>&3 3>&-
-    exec 2>&4 4>&-
-
-    #Only redirect output if we can
-    if [[ "${str_log_file}" != "STOP" ]]
-    then
-        #Redirect our stdOut/stdErr
-        exec 3>&1 1> >(tee ${str_log_file})
-        exec 4>&2 2> >(tee ${str_log_file})
+        #Remove the lock file
+        rm "${l_pid_file:4}" 1>/dev/null 2>&1 || (rc=$? && >&2 echo "Lock file ${l_pid_file:4} could not be removed" && return $rc)
     else
-        #We are essentially back to normal now. Reset our init_call variable
-        init_call=0
+        #Use a file descriptor to track a file for locking so we can utilize flock
+        exec 9>"${l_pid_file}" || (rc=$? && >&2 echo "File descriptor redirection to ${l_pid_file} failed" && return $rc)
+
+        #Acquire an exclusive lock to file descriptor 9 or fail
+        flock -n 9 1>/dev/null 2>&1 || (rc=$? && >&2 echo "${l_pid_file} already has a file lock" && return $rc)
     fi
 }
 
 #--------------------------------------------------------------------------
-#    FUNCTION       script_exit
-#    SYNTAX         script_exit <exitCode>
-#    DESCRIPTION    Cleans up logs and output redirection and performs any other exit tasks
-#
-#    VARIABLE
-#    DEPENDENCIES   N/A
-#
-#    FUNCTION
-#    DEPENDENCIES   redirect_output
+#    FUNCTION       f_script_exit
+#    SYNTAX         f_script_exit <exitCode>
+#    DESCRIPTION    Cleans up logs, traps, flocks, and performs any other exit tasks
 #--------------------------------------------------------------------------
-function script_exit
+f_script_exit()
 {
     #Validate the number of passed variables
     if [[ $# -gt 1 ]]
@@ -141,114 +68,66 @@ function script_exit
         >&2 echo "Received an invalid number of arguments"
     fi
 
-    #Unset our redirection of stdout/stderr
-    redirect_output "STOP"
-
-    #sync
-
     #Define variables as local first
-    typeset int_exit_code=$1; shift
+    declare l_exit_code="$1"; shift
 
     #Reset signal handlers to default actions
     trap - 0 1 2 3 15
 
+    #Remove any file descriptor locks
+    if [[ ${l_exit_code} -ne 11  ]]
+    then
+        f_check_execution "STOP${g_pid_file}" || >&2 echo "Removing file descriptor locks failed"
+    fi
+
+    #Remove empty log files
+    if [[ ! -s "${g_log_file}" ]]
+    then
+        rm "${g_log_file}" || >&2 echo "Removing null log file ${g_log_file} failed"
+    fi
+
+    #Check if we should send an email
+    #if [[ "${l_exit_code}" -ne 0 ]] && [[ -n ${g_email_addresses:-} ]]
+    #then
+    #    #Cleanup non-ascii characters
+    #    tr -cd '\11\12\15\40-\176' < "${g_log_file}" >| "${g_log_file}.email"
+    #
+    #    #Add space to the end of lines to prevent outlook from removing newlines
+    #    sed -i 's/$/   /g' "${g_log_file}.email"
+    #
+    #    #Send the email
+    #    mail -s "${g_script_file} Notification" "${g_email_addresses}" < "${g_log_file}.email" || >&2 echo "Sending the email notification failed."
+    #fi
+
     #Exit
-    exit $int_exit_code
+    exit "${l_exit_code}"
 }
 
 #--------------------------------------------------------------------------
-#     FUNCTION      script_usage
-#     SYNTAX        usage
+#     FUNCTION      f_script_usage
+#     SYNTAX        f_script_usage
 #     DESCRIPTION   Displays proper usage syntax for the script
-#
-#     VARIABLE
-#     DEPENDENCIES  n/a
-#
-#     FUNCTION
-#     DEPENDENCIES  n/a
 #--------------------------------------------------------------------------
-function script_usage
+f_script_usage()
 {
-    >&2 echo "Usage: ./${SCRIPT_NAME}.${SCRIPT_EXTENSION}"
-    >&2 echo ""
+    echo ""
+    echo "Usage: ./${SCRIPT_NAME}.${SCRIPT_EXTENSION}"
+    echo "  OPTIONAL PARAMETERS"
+    echo "      -m|--map        : The file containing enclosure/bay/phy mapping"
+    echo ""
 
-    script_exit 1
+    f_script_exit 1
 }
 
 #--------------------------------------------------------------------------
-#    FUNCTION       setup_log_directory
-#    SYNTAX         setup_log_directory <LogDirectoryName>
-#    DESCRIPTION    Accepts full logdirectory path and verifies if it can be written to
+#    FUNCTION       f_setup_directory
+#    SYNTAX         f_setup_directory <DirectoryName>
+#    DESCRIPTION    Accepts full directory path and verifies if it can be written to
 #                   0=Success
 #                   1=Failure
 #                   2=Error
-#    VARIABLE
-#    DEPENDENCIES   n/a
-#
-#    FUNCTION
-#    DEPENDENCIES   n/a
 #--------------------------------------------------------------------------
-function setup_log_directory
-{
-    #Validate the number of passed variables
-    if [[ $# -ne 1 ]]
-    then
-    #Invalid number of arguments
-    >&2 echo "Received an invalid number of arguments"
-    return 2
-    fi
-
-    #Assign variables passed
-    typeset str_log_dir=$1
-
-    #Check for the directory
-    if [[ ! -a ${str_log_dir} ]]
-    then
-        #The directory doesn't exist, try to create it
-        mkdir -p ${str_log_dir} 1>/dev/null 2>&1
-
-        #Re-check for the directory
-        if [[ ! -a ${str_log_dir} ]]
-        then
-            #The directory could not be created
-            >&2 echo "The directory ${str_log_dir} does not exist and could not be created"
-            return 1
-        fi
-    fi
-
-    #Check if the direcotory is writeable
-    if [[ ! -w ${str_log_dir} ]]
-    then
-        #The directory is not writeable, lets try to change that
-        chmod ugo+w ${str_log_dir} 1>/dev/null 2>&1
-
-        #Re-check for write permissions
-        if [[ ! -w ${str_log_dir} ]]
-        then
-            #The direcotry can still not be written to
-            >&2 echo "The direcotry ${str_log_dir} can not be written to"
-            return 1
-        fi
-    fi
-
-    #No Error
-    return 0
-}
-
-#--------------------------------------------------------------------------
-#    FUNCTION       setup_log_file
-#    SYNTAX         setup_log_file <log_file_name>
-#    DESCRIPTION    Accepts full logfile path and verifies if it can be written to
-#                   0=Success
-#                   1=Failure
-#                   2=Error
-#    VARIABLE
-#    DEPENDENCIES   n/a
-#
-#    FUNCTION
-#    DEPENDENCIES   n/a
-#--------------------------------------------------------------------------
-function setup_log_file
+f_setup_directory()
 {
     #Validate the number of passed variables
     if [[ $# -ne 1 ]]
@@ -259,77 +138,62 @@ function setup_log_file
     fi
 
     #Assign variables passed
-    typeset str_log_path=$1
-    typeset str_log_dir
-    typeset str_log_file
-
-    #Find the directory and filename from the full path
-    str_log_dir=$(dirname ${str_log_path})
-    if [[ $? -ne 0 ]]
-    then
-        #dirname failed
-        >&2 echo "Could not parse the directory path from logpath ${str_log_path}"
-        return 2
-    fi
-
-    str_log_file=$(basename ${str_log_path})
-    if [[ $? -ne 0 ]]
-    then
-        #basename failed
-        >&2 echo "Could not parse the file name from logpath ${str_log_path}"
-        return 2
-    fi
+    declare l_directory=$1; shift
 
     #Check for the directory
-    if [[ ! -a ${str_log_dir} ]]
+    if [[ ! -a "${l_directory}" ]]
     then
         #The directory doesn't exist, try to create it
-        mkdir -p ${str_log_dir} 1>/dev/null 2>&1
-
-        #Re-check for the directory
-        if [[ ! -a ${str_log_dir} ]]
-        then
-            #The directory could not be created
-            >&2 echo "The directory ${str_log_dir} does not exist and could not be created"
-            return 1
-        fi
+        mkdir -p "${l_directory}" 1>/dev/null 2>&1 || (rc=$? && >&2 echo "The directory ${l_directory} does not exist and could not be created" && return $rc)
     fi
 
-    #Check if the directory is writeable
-    if [[ ! -w ${str_log_dir} ]]
+    #Check if the direcotory is writeable
+    if [[ ! -w "${l_directory}" ]]
     then
         #The directory is not writeable, lets try to change that
-        chmod ugo+w ${str_log_dir} 1>/dev/null 2>&1
-
-        #Re-check for write permissions
-        if [[ ! -w ${str_log_dir} ]]
-        then
-            #The directory can still not be written to
-            >&2 echo "The directory ${str_log_dir} can not be written to"
-            return 1
-        fi
+        chmod ugo+w "${l_directory}" 1>/dev/null 2>&1 || (rc=$? && >&2 echo "The directory ${l_directory} can not be written to and permissions could not be modified" && return $rc)
     fi
 
+    #No Error
+    return 0
+}
+
+#--------------------------------------------------------------------------
+#    FUNCTION       f_setup_file
+#    SYNTAX         f_setup_file <file_name>
+#    DESCRIPTION    Accepts full file path and verifies if it can be written to
+#                   0=Success
+#                   1=Failure
+#                   2=Error
+#--------------------------------------------------------------------------
+f_setup_file()
+{
+    #Validate the number of passed variables
+    if [[ $# -ne 1 ]]
+    then
+        #Invalid number of arguments
+        >&2 echo "Received an invalid number of arguments"
+        return 2
+    fi
+
+    #Assign variables passed
+    declare l_file_path=$1; shift
+    typeset l_directory="${l_file_path%/*}"
+
+    f_setup_directory "${l_directory}" || return $?
+
     #Check if the file already exists
-    if [[ -a ${str_log_path} ]]
+    if [[ -a "${l_file_path}" ]]
     then
         #The file already exists, is it writable?
-        if [[ ! -w ${str_log_path} ]]
+        if [[ ! -w "${l_file_path}" ]]
         then
             #The file exists but is NOT writeable, lets try changing it
-            chmod ugo+w ${str_log_path} 1>/dev/null 2>&1
-
-            #Now, recheck if the file is writeable
-            if [[ ! -w ${str_log_path} ]]
-            then
-                #Still can't write to the file
-                >&2 echo "The file ${str_log_path} can not be written to"
-                return 1
-            fi
+            chmod ugo+w "${l_file_path}" 1>/dev/null 2>&1 || (rc=$? && >&2 echo "File ${l_file_path} exists but is not writeable and permissions could not be modified" && return $rc)
         fi
     else
         #The file does not exist, lets touch it
-        touch ${str_log_path}
+        touch "${l_file_path}" 1>/dev/null 2>&1 || (rc=$? && >&2 echo "File ${l_file_path} does not exist and could not be created" && return $rc)
     fi
 
     #No Error
@@ -339,128 +203,225 @@ function setup_log_file
 #--------------------------------------------------------------------------
 #     MAIN
 #--------------------------------------------------------------------------
-function main
+f_main()
 {
-    #Check Incoming Variables and Usage
-    while getopts d options
+    #getopt is required, make sure it's available
+    # -use ! and PIPESTATUS to get exit code with errexit set
+    ! getopt --test >| /dev/null 
+    if [[ ${PIPESTATUS[0]} -ne 4 ]]
+    then
+        >&2 echo "enhanced getopt is required for this script but not available on this system"
+        f_script_exit 1
+    fi
+
+    declare l_options=m:
+    declare l_options_long=map:
+
+    # -use ! and PIPESTATUS to get exit code with errexit set
+    ! l_options_parsed=$(getopt --options=$l_options --longoptions=$l_options_long --name "$0" -- "$@")
+    if [[ ${PIPESTATUS[0]} -ne 0 ]]
+    then
+        # getopt did not like the parameters passed
+        >&2 echo "getopt did not like the parameters passed"
+        f_script_exit 1
+    fi
+
+    # read getopt’s output this way to handle the quoting right:
+    eval set -- "$l_options_parsed"
+
+    # now enjoy the options in order and nicely split until we see --
+    while true
     do
-        case $options in
-        d)
-            DETAILED_OUTPUT=1
-        ;;
-        \?)
-            clear
-        ;;
-        *)
-            clear
-        ;;
+        case "$1" in
+            -m|--map)
+                g_map_file="${2}"
+                shift 2
+            ;;
+            --)
+                shift
+                break
+                ;;
+            *)
+                f_script_usage
+                ;;
         esac
     done
 
+    #Check for pre-requisites
+    for prereq in lsscsi lsblk udevadm
+    do
+        if [[ -z $(which ${prereq} 2>/dev/null) ]]
+        then
+            l_prereq_check="FAIL"
+            echo "${prereq} is a required tool. Make sure it is installed before executing this script"
+        fi
+    done
+
+    if [[ -n $(which zdb 2>/dev/null) ]] && [[ -z $(which partx 2>/dev/null) ]]
+    then
+        echo "partx is a required tool. Make sure it is installed before executing this script"
+    fi
+
     #Find hardware information
-    lsscsi_address=($(lsscsi 2>/dev/null | awk '{print $1}' | tr -d '[]' | xargs))
-    lsscsi_type=($(lsscsi 2>/dev/null | awk '{print $2}' | xargs))
-    lsscsi_transport=($(lsscsi --transport -L 2>/dev/null | egrep 'transport=' | cut -d'=' -f2 | xargs))
-    lsscsi_generic_path=($(lsscsi -g 2>/dev/null | rev | awk '{print $1}' | rev | xargs))
-    lsscsi_enclosures=($(lsscsi --transport -L 2>/dev/null | egrep 'enclosure_identifier' | sed 's/.*=0x//g' | sort -u))
+    enclosure_identifiers=($(lsscsi --transport -L 2>/dev/null | grep -E 'enclosure_identifier' | sed 's/.*=0x//g' | sort -u))
+    
+    #Find ZFS Information
+    #zfs_disks=$(zdb 2>/dev/null| grep -Ew 'path:' | awk '{print $2}' | tr -d "'" | xargs readlink -f)
+
+    disk_wwn=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'WWN="[^"]*["$]' | cut -d'"' -f2))
+    disk_sector_physical=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'PHY-SEC="[^"]*["$]' | cut -d'"' -f2))
+    disk_sector_logical=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'LOG-SEC="[^"]*["$]' | cut -d'"' -f2))
+    disk_transport=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'TRAN="[^"]*["$]' | cut -d'"' -f2))
+    disk_model=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'MODEL="[^"]*["$]' | cut -d'"' -f2))
+
+    #Create a temp file for output
+    output_temp_file=$(mktemp)
+    echo "ENCLOSURE  BAY  SIZE  MODEL  SERIAL  PATH  HCTL  MPATH  ZFS" > ${output_temp_file}
 
     #Parse through all hardware information and get detailed data
     cnt_i=0
-    while [[ ${cnt_i} -lt ${#lsscsi_address[@]} ]]
+    while [[ ${cnt_i} -lt ${#disk_wwn[@]} ]]
     do
-        #Commands for all disks
-        disk_path[${cnt_i}]=$(lsblk --paths --list --output NAME,HCTL | egrep "${lsscsi_address[${cnt_i}]}" | awk '{print $1}')
-        disk_wwn[${cnt_i}]=$(/lib/udev/scsi_id -g ${lsscsi_generic_path[${cnt_i}]})
+        disk_path[${cnt_i}]=$(lsblk --paths --nodeps --pairs --output WWN,TYPE,NAME,HCTL,PHY-SEC,LOG-SEC,TRAN,MODEL | grep ${disk_wwn[${cnt_i}]} | grep -o 'NAME="[^"]*["$]' | cut -d'"' -f2 | xargs | tr ' ' ',')
+        disk_hctl[${cnt_i}]=$(lsblk --paths --nodeps --pairs --output WWN,TYPE,NAME,HCTL,PHY-SEC,LOG-SEC,TRAN,MODEL | grep ${disk_wwn[${cnt_i}]} | grep -o 'HCTL="[^"]*["$]' | cut -d'"' -f2 | xargs | tr ' ' ',')
+        disk_size[${cnt_i}]=$(lsscsi -g -s ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | rev | awk '{print $1}' | rev )
 
-        case ${lsscsi_transport[${cnt_i}]} in
-        fc0:)
-            #Nothing to do here yet
-            echo "Nothing to do for fiber channel"
-        ;;
-        sas)
-            lsscsi_model[${cnt_i}]=$(lsscsi --transport -L ${lsscsi_address[${cnt_i}]} 2>/dev/null | egrep 'model=' | cut -d'=' -f2)
-            lsscsi_enclosure_identifier[${cnt_i}]=$(lsscsi --transport -L ${lsscsi_address[${cnt_i}]} 2>/dev/null | egrep 'enclosure_identifier' | sed 's/.*=0x//g')
-            lsscsi_sas_address[${cnt_i}]=$(lsscsi --transport -L ${lsscsi_address[${cnt_i}]} 2>/dev/null | egrep 'sas_address' | sed 's/.*=0x//g')
-            lsscsi_phy_identifier[${cnt_i}]=$(lsscsi --transport -L ${lsscsi_address[${cnt_i}]} 2>/dev/null | egrep 'phy_identifier' | cut -d'=' -f2)
-        ;;
-        sata)
-            lsscsi_model[${cnt_i}]=$(cat /sys/block/$(echo ${disk_path[${cnt_i}]} | cut -d'/' -f3)/device/model)
-            #Missing, enclosure identifier, sas address, phy identifier
-        ;;
-        *)
-            clear
-        ;;
-        esac
-        
-        #Output our data for validation
-        echo ${lsscsi_address[${cnt_i}]}
-        echo ${lsscsi_type[${cnt_i}]}
-        echo ${lsscsi_transport[${cnt_i}]}
-        echo ${lsscsi_model[${cnt_i}]}
-        echo ${lsscsi_generic_path[${cnt_i}]}
-        echo ${disk_path[${cnt_i}]}
-        echo ${disk_wwn[${cnt_i}]}
-        echo ${lsscsi_enclosure_identifier[${cnt_i}]}
-        echo ${lsscsi_sas_address[${cnt_i}]}
-        echo ${lsscsi_phy_identifier[${cnt_i}]}
-        echo "------------------------------"
+        #Check for multipath configuration
+        disk_multipath[${cnt_i}]=$(find /dev/mapper -name "$(multipath -ll ${disk_path[${cnt_i}]%,*} 2>/dev/null | head -n 1 | awk '{print $1}')")
+        if [[ -z ${disk_multipath[${cnt_i}]} ]]
+        then
+            disk_multipath[${cnt_i}]="N/A"
+        fi
+
+        #Check for zfs config
+        if [[ -n $(which zdb 2>/dev/null) ]]
+        then
+            temp_zfs_pool=$(zdb -l ${disk_path[${cnt_i}]%,*} 2>/dev/null)
+            return_code=$?
+            if [[ ${return_code} -ne 0 ]]
+            then
+                for partition in $(partx --noheadings --raw --output NR ${disk_path[${cnt_i}]%,*} 2>/dev/null | xargs)
+                do
+                    temp_zfs_pool=$(zdb -l ${disk_path[${cnt_i}]%,*}${partition} 2>/dev/null)
+                    return_code=$?
+                    if [[ ${return_code} -eq 0 ]]
+                    then
+                        temp_disk_path=${disk_path[${cnt_i}]%,*}${partition}
+                        break
+                    fi
+                done
+            else
+                temp_disk_path=${disk_path[${cnt_i}]%,*}
+            fi
+            if [[ -n ${temp_disk_path} ]]
+            then
+                disk_zfs_pool[${cnt_i}]=$(echo "${temp_zfs_pool}" | grep -Ew 'name:' | awk '{print $2}' | tr -d "'")
+                disk_zfs_type[${cnt_i}]=$(zdb -l ${temp_disk_path} 2>/dev/null | grep -Ew 'type:' | head -n1 | awk '{print $2}' | tr -d "'")
+                disk_zfs_id[${cnt_i}]=$(zdb -l ${temp_disk_path} 2>/dev/null | grep -Ew 'id:' | head -n1 | awk '{print $2}')
+                temp_disk_path=""
+                print_zfs[${cnt_i}]="${disk_zfs_pool[${cnt_i}]}-${disk_zfs_type[${cnt_i}]}:${disk_zfs_id[${cnt_i}]}"
+            else
+                print_zfs[${cnt_i}]="N/A"
+            fi
+        else
+            print_zfs[${cnt_i}]="N/A"
+        fi
+
+
+        if [[ "${disk_transport[${cnt_i}]}" = "sas" ]]
+        then
+            disk_sas_address[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'sas_address' | sed 's/.*=0x//g')
+
+            disk_bus[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'ID_BUS=[^.]\+' | cut -d'=' -f2)
+            if [[ "${disk_bus[${cnt_i}]}" = "scsi" ]]
+            then
+                disk_serial[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'SCSI_IDENT_SERIAL=[^.]\+' | cut -d'=' -f2)
+            elif [[ "${disk_bus[${cnt_i}]}" = "ata" ]]
+            then
+                disk_serial[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'ID_SERIAL_SHORT=[^.]\+' | cut -d'=' -f2)
+            fi
+
+            disk_enclosure_identifier[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'enclosure_identifier' | sed 's/.*=0x//g')
+            if [[ -n ${MAP_FILE} ]] && [[ $(grep -Ec '^enclosure' ${MAP_FILE} 2>/dev/null) -gt 0 ]]
+            then
+                print_enclosure_identifier[${cnt_i}]=$(grep -E "^enclosure ${disk_enclosure_identifier[${cnt_i}]}" ${MAP_FILE} | awk '{print $3}')
+            else
+                print_enclosure_identifier[${cnt_i}]=${disk_enclosure_identifier[${cnt_i}]}
+            fi
+
+            disk_phy_identifier[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'phy_identifier' | cut -d'=' -f2)
+            if [[ -n ${MAP_FILE} ]] && [[ $(grep -Ec "^phy ${disk_phy_identifier[${cnt_i}]}" ${MAP_FILE} 2>/dev/null) -gt 0 ]]
+            then
+                print_phy_identifier[${cnt_i}]=$(grep -E "^phy ${disk_phy_identifier[${cnt_i}]}" ${MAP_FILE} | awk '{print $3}')
+            else
+                print_phy_identifier[${cnt_i}]=${disk_phy_identifier[${cnt_i}]}
+            fi
+
+            disk_bay_identifier[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'bay_identifier' | cut -d'=' -f2)
+            if [[ -n ${MAP_FILE} ]] && [[ $(grep -Ec "^bay ${disk_bay_identifier[${cnt_i}]}" ${MAP_FILE} 2>/dev/null) -gt 0 ]]
+            then
+                print_bay_identifier[${cnt_i}]=$(grep -E "^bay ${disk_bay_identifier[${cnt_i}]}" ${MAP_FILE} | awk '{print $3}')
+            else
+                print_bay_identifier[${cnt_i}]=${disk_bay_identifier[${cnt_i}]}
+            fi
+
+            #Find all SAS addresses for a disk?
+            #sdparm -t sas -p pcd /dev/sdb | grep -e 'SASA' | awk '{print $2}'
+
+            echo "${print_enclosure_identifier[${cnt_i}]}  ${print_bay_identifier[${cnt_i}]}  ${disk_size[${cnt_i}]}  ${disk_model[${cnt_i}]}  ${disk_serial[${cnt_i}]}  ${disk_path[${cnt_i}]} ${disk_hctl[${cnt_i}]} ${disk_multipath[${cnt_i}]}  ${print_zfs[${cnt_i}]}"
+        fi
 
         ((cnt_i+=1))
-    done
+    done | sort -k 1,1 -k 2,2n >> ${output_temp_file}
 
-    #At a disk level, find out if a the disk is flagged for use of anything with lsblk
-    #Create temp files for each enclosure so we can add our data, sort, and parse it additionally
-    #Somehow create an array that maps and defines enclosures only for easier processing later
-    #Gather more disk information? Size, phy/log sectors?
+    column -t ${output_temp_file}
+    rm ${output_temp_file}
 }
 
+#Save information about our script
+g_script_file="${0##*/}"
+g_script_name="${g_script_file%.*}"
+g_script_extension="${g_script_file##*.}"
+g_script_path=$(readlink -f "$0")
+g_script_dir="${g_script_path%/*}"
+g_script_flags="$@"
+g_script_path_hash=$(echo "${g_script_path}" | cksum 2>/dev/null| awk '{print $1}')
+
 #See if this script is already running
-SCRIPT_NAME=$(echo $(basename ${0}) | rev | cut -d'.' -f2- | rev)
-PID_FILE=/var/run/${SCRIPT_NAME}.pid
-check_execution ${PID_FILE}
+g_pid_file="/var/run/${g_script_name}_${g_script_path_hash}.pid"
+f_check_execution "${g_pid_file}" || f_script_exit 11
 
-#Set signal handlers to run our script_exit Function
-trap 'rc=$?; script_exit $rc' 0 1 2 3 15
-
-#Required for the redirect_output Function
-init_call=0
-
-#Pulls the script name without directory paths or extension
-SCRIPT_FILE=$(basename ${0})
-SCRIPT_EXTENSION=$(echo $(basename ${0}) | rev | cut -d'.' -f1 | rev)
-SCRIPT_PATH=$(readlink -f $0)
-SCRIPT_BASE=$(dirname ${SCRIPT_PATH})
-SCRIPT_FLAGS=$@
+#Set signal handlers to run our script_exit function
+trap 'rc=$?; f_script_exit $rc' 0 1 2 3 15
 
 #Pulls the local node name, not including any suffix
-LOCAL_NODE=$(find_local_node_name)
-
-#Script directory
-SCRIPT_DIR_BASE=/usr/local/bin
-SCRIPT_DIR_PATH=${SCRIPT_DIR_BASE}/${SCRIPT_NAME}
+g_local_node=$(hostname -s)
+g_local_node_fqdn=$(hostname -f)
+g_local_node_os=$(uname)
 
 #Timestamp
-DATE_STAMP=$(date +"%Y.%m.%d")
-TIME_STAMP=$(date +"%Y.%m.%d.%H.%M.%S")
+g_date_stamp=$(date +"%Y.%m.%d")
+g_time_stamp=$(date +"%Y.%m.%d.%H.%M.%S")
 
 #Various log files
-LOG_FILE_PATH=${SCRIPT_DIR_PATH}
-LOG_FILE=${LOG_FILE_PATH}/${SCRIPT_NAME}.${TIME_STAMP}.log
+g_log_dir="/var/log"
+g_log_path="${g_log_dir}/${g_script_name}"
+g_log_file="${g_log_path}/${g_script_name}.${g_time_stamp}.log"
 
 #Setup Logs
-if [[ $(setup_log_file ${LOG_FILE}) -ne 0 ]]
+f_setup_file "${g_log_file}" || (rc=$? && >&2 echo "Validating logfile ${g_log_file} failed" && f_script_exit $rc)
+
+#Check OS
+if [[ "${g_local_node_os}" != "Linux" ]]
 then
-    script_exit 1
+    >&2 echo ""
+    >&2 echo " !!!! Warning: This script was not tested on anything but Linux, proceed at your own risk" | tee -a "${g_log_file}"
+    >&2 echo ""
 fi
 
-#Utilize execOutputHandler to redirect/prepend all our stdOut/stdErr
-redirect_output ${LOG_FILE}
-
-#Disable detailed output by default
-DETAILED_OUTPUT=0
-
 #Execute main
-main "$@"
+#This syntax is necessary to tee all output to a logfile without calling a subshell. AKA, without using a |
+f_main "$@" > >(tee "${g_log_file}") 2>&1
 
-#Exit
-script_exit 0
+#This exist only exists as a fail safe. Always exit from your main function
+f_script_exit 0
