@@ -6,7 +6,7 @@
 #--------------------------------------------------------------------------
 
 #Variable to keep track of version for auditing purposes
-script_version=1.0.0
+script_version=1.0.1
 
 #Set environment options
 #set -o errexit      # -e Any non-zero output will cause an automatic script failure
@@ -342,25 +342,25 @@ f_main()
             fi
 
             disk_enclosure_identifier[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'enclosure_identifier' | sed 's/.*=0x//g')
-            if [[ -n ${MAP_FILE} ]] && [[ $(grep -Ec '^enclosure' ${MAP_FILE} 2>/dev/null) -gt 0 ]]
+            if [[ -n ${g_map_file} ]] && [[ $(grep -Ec '^enclosure' ${g_map_file} 2>/dev/null) -gt 0 ]]
             then
-                print_enclosure_identifier[${cnt_i}]=$(grep -E "^enclosure ${disk_enclosure_identifier[${cnt_i}]}" ${MAP_FILE} | awk '{print $3}')
+                print_enclosure_identifier[${cnt_i}]=$(grep -E "^enclosure ${disk_enclosure_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
             else
                 print_enclosure_identifier[${cnt_i}]=${disk_enclosure_identifier[${cnt_i}]}
             fi
 
             disk_phy_identifier[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'phy_identifier' | cut -d'=' -f2)
-            if [[ -n ${MAP_FILE} ]] && [[ $(grep -Ec "^phy ${disk_phy_identifier[${cnt_i}]}" ${MAP_FILE} 2>/dev/null) -gt 0 ]]
+            if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^phy ${disk_phy_identifier[${cnt_i}]}" ${g_map_file} 2>/dev/null) -gt 0 ]]
             then
-                print_phy_identifier[${cnt_i}]=$(grep -E "^phy ${disk_phy_identifier[${cnt_i}]}" ${MAP_FILE} | awk '{print $3}')
+                print_phy_identifier[${cnt_i}]=$(grep -E "^phy ${disk_phy_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
             else
                 print_phy_identifier[${cnt_i}]=${disk_phy_identifier[${cnt_i}]}
             fi
 
             disk_bay_identifier[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'bay_identifier' | cut -d'=' -f2)
-            if [[ -n ${MAP_FILE} ]] && [[ $(grep -Ec "^bay ${disk_bay_identifier[${cnt_i}]}" ${MAP_FILE} 2>/dev/null) -gt 0 ]]
+            if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^bay ${disk_bay_identifier[${cnt_i}]}" ${g_map_file} 2>/dev/null) -gt 0 ]]
             then
-                print_bay_identifier[${cnt_i}]=$(grep -E "^bay ${disk_bay_identifier[${cnt_i}]}" ${MAP_FILE} | awk '{print $3}')
+                print_bay_identifier[${cnt_i}]=$(grep -E "^bay ${disk_bay_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
             else
                 print_bay_identifier[${cnt_i}]=${disk_bay_identifier[${cnt_i}]}
             fi
