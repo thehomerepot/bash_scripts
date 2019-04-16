@@ -6,7 +6,7 @@
 #--------------------------------------------------------------------------
 
 #Variable to keep track of version for auditing purposes
-script_version=1.0.1
+script_version=1.1.0
 
 #Set environment options
 #set -o errexit      # -e Any non-zero output will cause an automatic script failure
@@ -264,15 +264,15 @@ f_main()
 
     #Find hardware information
     enclosure_identifiers=($(lsscsi --transport -L 2>/dev/null | grep -E 'enclosure_identifier' | sed 's/.*=0x//g' | sort -u))
-    
-    #Find ZFS Information
-    #zfs_disks=$(zdb 2>/dev/null| grep -Ew 'path:' | awk '{print $2}' | tr -d "'" | xargs readlink -f)
 
-    disk_wwn=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'WWN="[^"]*["$]' | cut -d'"' -f2))
-    disk_sector_physical=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'PHY-SEC="[^"]*["$]' | cut -d'"' -f2))
-    disk_sector_logical=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'LOG-SEC="[^"]*["$]' | cut -d'"' -f2))
-    disk_transport=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'TRAN="[^"]*["$]' | cut -d'"' -f2))
-    disk_model=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'MODEL="[^"]*["$]' | cut -d'"' -f2))
+    original_ifs=$IFS
+    IFS='!'
+    disk_wwn=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'WWN="[^"]*["$]' | cut -d'"' -f2 | tr '\n' '!'))
+    disk_sector_physical=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'PHY-SEC="[^"]*["$]' | cut -d'"' -f2 | tr '\n' '!'))
+    disk_sector_logical=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'LOG-SEC="[^"]*["$]' | cut -d'"' -f2 | tr '\n' '!'))
+    disk_transport=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'TRAN="[^"]*["$]' | cut -d'"' -f2 | tr '\n' '!'))
+    disk_model=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'MODEL="[^"]*["$]' | cut -d'"' -f2 | tr -d ' ' | tr '\n' '!'))
+    IFS=$original_ifs
 
     #Create a temp file for output
     output_temp_file=$(mktemp)
@@ -327,49 +327,64 @@ f_main()
             print_zfs[${cnt_i}]="N/A"
         fi
 
-
-        if [[ "${disk_transport[${cnt_i}]}" = "sas" ]]
+        disk_bus[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'ID_BUS=[^.]\+' | cut -d'=' -f2)
+        if [[ "${disk_bus[${cnt_i}]}" = "scsi" ]]
         then
-            disk_sas_address[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'sas_address' | sed 's/.*=0x//g')
-
-            disk_bus[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'ID_BUS=[^.]\+' | cut -d'=' -f2)
-            if [[ "${disk_bus[${cnt_i}]}" = "scsi" ]]
-            then
-                disk_serial[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'SCSI_IDENT_SERIAL=[^.]\+' | cut -d'=' -f2)
-            elif [[ "${disk_bus[${cnt_i}]}" = "ata" ]]
-            then
-                disk_serial[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'ID_SERIAL_SHORT=[^.]\+' | cut -d'=' -f2)
-            fi
-
-            disk_enclosure_identifier[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'enclosure_identifier' | sed 's/.*=0x//g')
-            if [[ -n ${g_map_file} ]] && [[ $(grep -Ec '^enclosure' ${g_map_file} 2>/dev/null) -gt 0 ]]
-            then
-                print_enclosure_identifier[${cnt_i}]=$(grep -E "^enclosure ${disk_enclosure_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
-            else
-                print_enclosure_identifier[${cnt_i}]=${disk_enclosure_identifier[${cnt_i}]}
-            fi
-
-            disk_phy_identifier[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'phy_identifier' | cut -d'=' -f2)
-            if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^phy ${disk_phy_identifier[${cnt_i}]}" ${g_map_file} 2>/dev/null) -gt 0 ]]
-            then
-                print_phy_identifier[${cnt_i}]=$(grep -E "^phy ${disk_phy_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
-            else
-                print_phy_identifier[${cnt_i}]=${disk_phy_identifier[${cnt_i}]}
-            fi
-
-            disk_bay_identifier[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'bay_identifier' | cut -d'=' -f2)
-            if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^bay ${disk_bay_identifier[${cnt_i}]}" ${g_map_file} 2>/dev/null) -gt 0 ]]
-            then
-                print_bay_identifier[${cnt_i}]=$(grep -E "^bay ${disk_bay_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
-            else
-                print_bay_identifier[${cnt_i}]=${disk_bay_identifier[${cnt_i}]}
-            fi
-
-            #Find all SAS addresses for a disk?
-            #sdparm -t sas -p pcd /dev/sdb | grep -e 'SASA' | awk '{print $2}'
-
-            echo "${print_enclosure_identifier[${cnt_i}]}  ${print_bay_identifier[${cnt_i}]}  ${disk_size[${cnt_i}]}  ${disk_model[${cnt_i}]}  ${disk_serial[${cnt_i}]}  ${disk_path[${cnt_i}]} ${disk_hctl[${cnt_i}]} ${disk_multipath[${cnt_i}]}  ${print_zfs[${cnt_i}]}"
+            disk_serial[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'SCSI_IDENT_SERIAL=[^.]\+' | cut -d'=' -f2)
+        elif [[ "${disk_bus[${cnt_i}]}" = "ata" ]]
+        then
+            disk_serial[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'ID_SERIAL_SHORT=[^.]\+' | cut -d'=' -f2)
         fi
+
+        disk_sas_address[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'sas_address' | sed 's/.*=0x//g')
+        if [[ -z ${disk_sas_address[${cnt_i}]} ]]
+        then
+            disk_sas_address[${cnt_i}]="N/A"
+        fi
+
+        disk_enclosure_identifier[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'enclosure_identifier' | sed 's/.*=0x//g')
+        if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^enclosure ${disk_enclosure_identifier[${cnt_i}]:-NULL}" ${g_map_file} 2>/dev/null) -gt 0 ]]
+        then
+            print_enclosure_identifier[${cnt_i}]=$(grep -E "^enclosure ${disk_enclosure_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
+        else
+            print_enclosure_identifier[${cnt_i}]=${disk_enclosure_identifier[${cnt_i}]}
+        fi
+        if [[ -z ${disk_enclosure_identifier[${cnt_i}]} ]]
+        then
+            disk_enclosure_identifier[${cnt_i}]="N/A"
+            print_enclosure_identifier[${cnt_i}]="N/A"
+        fi
+
+        disk_phy_identifier[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'phy_identifier' | cut -d'=' -f2)
+        if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^phy ${disk_phy_identifier[${cnt_i}]}" ${g_map_file} 2>/dev/null) -gt 0 ]]
+        then
+            print_phy_identifier[${cnt_i}]=$(grep -E "^phy ${disk_phy_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
+        else
+            print_phy_identifier[${cnt_i}]=${disk_phy_identifier[${cnt_i}]}
+        fi
+        if [[ -z ${disk_phy_identifier[${cnt_i}]} ]]
+        then
+            disk_phy_identifier[${cnt_i}]="N/A"
+            print_phy_identifier[${cnt_i}]="N/A"
+        fi
+
+        disk_bay_identifier[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'bay_identifier' | cut -d'=' -f2)
+        if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^bay ${disk_bay_identifier[${cnt_i}]}" ${g_map_file} 2>/dev/null) -gt 0 ]]
+        then
+            print_bay_identifier[${cnt_i}]=$(grep -E "^bay ${disk_bay_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
+        else
+            print_bay_identifier[${cnt_i}]=${disk_bay_identifier[${cnt_i}]}
+        fi
+        if [[ -z ${disk_bay_identifier[${cnt_i}]} ]]
+        then
+            disk_bay_identifier[${cnt_i}]="N/A"
+            print_bay_identifier[${cnt_i}]="N/A"
+        fi
+
+        #Find all SAS addresses for a disk?
+        #sdparm -t sas -p pcd /dev/sdb | grep -e 'SASA' | awk '{print $2}'
+
+        echo "${print_enclosure_identifier[${cnt_i}]}  ${print_bay_identifier[${cnt_i}]}  ${disk_size[${cnt_i}]}  ${disk_model[${cnt_i}]}  ${disk_serial[${cnt_i}]}  ${disk_path[${cnt_i}]} ${disk_hctl[${cnt_i}]} ${disk_multipath[${cnt_i}]}  ${print_zfs[${cnt_i}]}"
 
         ((cnt_i+=1))
     done | sort -k 1,1 -k 2,2n >> ${output_temp_file}
