@@ -2,6 +2,8 @@
 #--------------------------------------------------------------------------
 #   Name            : identify_disks.sh
 #   Purpose         : Gather information about the hard drives in your system
+#   Author          : Ryan Flagler
+#   Source          : https://github.com/thehomerepot/bash_scripts/blob/master/identify_disks.sh
 #   Usage           : ./identify_drives.sh
 #--------------------------------------------------------------------------
 
