@@ -8,7 +8,7 @@
 #--------------------------------------------------------------------------
 
 #Variable to keep track of version for auditing purposes
-script_version=1.1.0
+script_version=1.2.0
 
 #Set environment options
 #set -o errexit      # -e Any non-zero output will cause an automatic script failure
@@ -278,7 +278,7 @@ f_main()
 
     #Create a temp file for output
     output_temp_file=$(mktemp)
-    echo "ENCLOSURE  BAY  SIZE  MODEL  SERIAL  PATH  HCTL  MPATH  ZFS" > ${output_temp_file}
+    echo "ENCLOSURE  BAY  SIZE  MODEL  SERIAL  PATH  HCTL  MPATH  ZPOOL  ZPATH" > ${output_temp_file}
 
     #Parse through all hardware information and get detailed data
     cnt_i=0
@@ -320,13 +320,26 @@ f_main()
                 disk_zfs_pool[${cnt_i}]=$(echo "${temp_zfs_pool}" | grep -Ew 'name:' | awk '{print $2}' | tr -d "'")
                 disk_zfs_type[${cnt_i}]=$(zdb -l ${temp_disk_path} 2>/dev/null | grep -Ew 'type:' | head -n1 | awk '{print $2}' | tr -d "'")
                 disk_zfs_id[${cnt_i}]=$(zdb -l ${temp_disk_path} 2>/dev/null | grep -Ew 'id:' | head -n1 | awk '{print $2}')
+                for temp_zfs_path in $(zdb -l ${temp_disk_path} 2>/dev/null | grep -Ew 'path:' | awk '{print $2}' | tr -d "'" | xargs)
+                do
+                    temp_disk_serial=$(udevadm info --query=all --name=${temp_disk_path} 2>/dev/null | grep -o 'ID_SERIAL_SHORT=[^.]\+' | cut -d'=' -f2)
+                    temp_zfs_serial_count=$(udevadm info --query=all --name=${temp_zfs_path} 2>/dev/null | grep -c ${temp_disk_serial})
+                    if [[ ${temp_zfs_serial_count} -gt 0 ]]
+                    then
+                        disk_zfs_path[${cnt_i}]="${temp_zfs_path}"
+                        break
+                    fi
+                done
                 temp_disk_path=""
-                print_zfs[${cnt_i}]="${disk_zfs_pool[${cnt_i}]}-${disk_zfs_type[${cnt_i}]}:${disk_zfs_id[${cnt_i}]}"
+                print_zpool[${cnt_i}]="${disk_zfs_pool[${cnt_i}]}-${disk_zfs_type[${cnt_i}]}:${disk_zfs_id[${cnt_i}]}"
+                print_zpath[${cnt_i}]="${disk_zfs_path[${cnt_i}]}"
             else
-                print_zfs[${cnt_i}]="N/A"
+                print_zpool[${cnt_i}]="N/A"
+                print_zpath[${cnt_i}]="N/A"
             fi
         else
-            print_zfs[${cnt_i}]="N/A"
+            print_zpool[${cnt_i}]="N/A"
+            print_zpath[${cnt_i}]="N/A"
         fi
 
         disk_bus[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'ID_BUS=[^.]\+' | cut -d'=' -f2)
@@ -386,7 +399,7 @@ f_main()
         #Find all SAS addresses for a disk?
         #sdparm -t sas -p pcd /dev/sdb | grep -e 'SASA' | awk '{print $2}'
 
-        echo "${print_enclosure_identifier[${cnt_i}]}  ${print_bay_identifier[${cnt_i}]}  ${disk_size[${cnt_i}]}  ${disk_model[${cnt_i}]}  ${disk_serial[${cnt_i}]}  ${disk_path[${cnt_i}]} ${disk_hctl[${cnt_i}]} ${disk_multipath[${cnt_i}]}  ${print_zfs[${cnt_i}]}"
+        echo "${print_enclosure_identifier[${cnt_i}]}  ${print_bay_identifier[${cnt_i}]}  ${disk_size[${cnt_i}]}  ${disk_model[${cnt_i}]}  ${disk_serial[${cnt_i}]}  ${disk_path[${cnt_i}]} ${disk_hctl[${cnt_i}]} ${disk_multipath[${cnt_i}]}  ${print_zpool[${cnt_i}]}  ${print_zpath[${cnt_i}]}"
 
         ((cnt_i+=1))
     done | sort -k 1,1 -k 2,2n >> ${output_temp_file}
