@@ -8,7 +8,7 @@
 #--------------------------------------------------------------------------
 
 #Variable to keep track of version for auditing purposes
-script_version=1.2.0
+script_version=1.3.0
 
 #Set environment options
 #set -o errexit      # -e Any non-zero output will cause an automatic script failure
@@ -278,7 +278,7 @@ f_main()
 
     #Create a temp file for output
     output_temp_file=$(mktemp)
-    echo "ENCLOSURE  BAY  SIZE  MODEL  SERIAL  PATH  HCTL  MPATH  ZPOOL  ZPATH" > ${output_temp_file}
+    echo "ENCLOSURE  BAY  SIZE  MODEL  FIRMWARE  SERIAL  PATH  HCTL  MPATH  ZPOOL  ZPATH" > ${output_temp_file}
 
     #Parse through all hardware information and get detailed data
     cnt_i=0
@@ -287,6 +287,7 @@ f_main()
         disk_path[${cnt_i}]=$(lsblk --paths --nodeps --pairs --output WWN,TYPE,NAME,HCTL,PHY-SEC,LOG-SEC,TRAN,MODEL | grep ${disk_wwn[${cnt_i}]} | grep -o 'NAME="[^"]*["$]' | cut -d'"' -f2 | xargs | tr ' ' ',')
         disk_hctl[${cnt_i}]=$(lsblk --paths --nodeps --pairs --output WWN,TYPE,NAME,HCTL,PHY-SEC,LOG-SEC,TRAN,MODEL | grep ${disk_wwn[${cnt_i}]} | grep -o 'HCTL="[^"]*["$]' | cut -d'"' -f2 | xargs | tr ' ' ',')
         disk_size[${cnt_i}]=$(lsscsi -g -s ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | rev | awk '{print $1}' | rev )
+		disk_firmware[${cnt_i}]=$(lsscsi ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | rev | awk '{print $2}' | rev )
 
         #Check for multipath configuration
         disk_multipath[${cnt_i}]=$(find /dev/mapper -name "$(multipath -ll ${disk_path[${cnt_i}]%,*} 2>/dev/null | head -n 1 | awk '{print $1}')")
@@ -399,7 +400,7 @@ f_main()
         #Find all SAS addresses for a disk?
         #sdparm -t sas -p pcd /dev/sdb | grep -e 'SASA' | awk '{print $2}'
 
-        echo "${print_enclosure_identifier[${cnt_i}]}  ${print_bay_identifier[${cnt_i}]}  ${disk_size[${cnt_i}]}  ${disk_model[${cnt_i}]}  ${disk_serial[${cnt_i}]}  ${disk_path[${cnt_i}]} ${disk_hctl[${cnt_i}]} ${disk_multipath[${cnt_i}]}  ${print_zpool[${cnt_i}]}  ${print_zpath[${cnt_i}]}"
+        echo "${print_enclosure_identifier[${cnt_i}]}  ${print_bay_identifier[${cnt_i}]}  ${disk_size[${cnt_i}]}  ${disk_model[${cnt_i}]}  ${disk_firmware[${cnt_i}]}  ${disk_serial[${cnt_i}]}  ${disk_path[${cnt_i}]} ${disk_hctl[${cnt_i}]} ${disk_multipath[${cnt_i}]}  ${print_zpool[${cnt_i}]}  ${print_zpath[${cnt_i}]}"
 
         ((cnt_i+=1))
     done | sort -k 1,1 -k 2,2n >> ${output_temp_file}
