@@ -285,9 +285,9 @@ f_main()
     while [[ ${cnt_i} -lt ${#disk_wwn[@]} ]]
     do
         disk_path[${cnt_i}]=$(lsblk --paths --nodeps --pairs --output WWN,TYPE,NAME,HCTL,PHY-SEC,LOG-SEC,TRAN,MODEL | grep ${disk_wwn[${cnt_i}]} | grep -o 'NAME="[^"]*["$]' | cut -d'"' -f2 | xargs | tr ' ' ',')
-        disk_hctl[${cnt_i}]=$(lsblk --paths --nodeps --pairs --output WWN,TYPE,NAME,HCTL,PHY-SEC,LOG-SEC,TRAN,MODEL | grep ${disk_wwn[${cnt_i}]} | grep -o 'HCTL="[^"]*["$]' | cut -d'"' -f2 | xargs | tr ' ' ',')
+        disk_hctl[${cnt_i}]=$(lsblk --paths --nodeps --pairs --output WWN,TYPE,NAME,HCTL,PHY-SEC,LOG-SEC,TRAN,MODEL | grep ${disk_wwn[${cnt_i}]} | grep -o 'HCTL="[^"]*["$]' | cut -d'"' -f2 | cut -d':' -f1-3 | xargs | tr ' ' ',')
         disk_size[${cnt_i}]=$(lsscsi -g -s ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | rev | awk '{print $1}' | rev )
-		disk_firmware[${cnt_i}]=$(lsscsi ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | rev | awk '{print $2}' | rev )
+	disk_firmware[${cnt_i}]=$(lsscsi ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | rev | awk '{print $2}' | rev )
 
         #Check for multipath configuration
         disk_multipath[${cnt_i}]=$(find /dev/mapper -name "$(multipath -ll ${disk_path[${cnt_i}]%,*} 2>/dev/null | head -n 1 | awk '{print $1}')")
