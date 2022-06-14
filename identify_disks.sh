@@ -209,7 +209,7 @@ f_main()
 {
     #getopt is required, make sure it's available
     # -use ! and PIPESTATUS to get exit code with errexit set
-    ! getopt --test >| /dev/null 
+    ! getopt --test >| /dev/null
     if [[ ${PIPESTATUS[0]} -ne 4 ]]
     then
         >&2 echo "enhanced getopt is required for this script but not available on this system"
@@ -228,7 +228,7 @@ f_main()
         f_script_exit 1
     fi
 
-    # read getopt’s output this way to handle the quoting right:
+    # read getopt's output this way to handle the quoting right:
     eval set -- "$l_options_parsed"
 
     # now enjoy the options in order and nicely split until we see --
@@ -287,7 +287,7 @@ f_main()
         disk_path[${cnt_i}]=$(lsblk --paths --nodeps --pairs --output WWN,TYPE,NAME,HCTL,PHY-SEC,LOG-SEC,TRAN,MODEL | grep ${disk_wwn[${cnt_i}]} | grep -o 'NAME="[^"]*["$]' | cut -d'"' -f2 | xargs | tr ' ' ',')
         disk_hctl[${cnt_i}]=$(lsblk --paths --nodeps --pairs --output WWN,TYPE,NAME,HCTL,PHY-SEC,LOG-SEC,TRAN,MODEL | grep ${disk_wwn[${cnt_i}]} | grep -o 'HCTL="[^"]*["$]' | cut -d'"' -f2 | cut -d':' -f1-3 | xargs | tr ' ' ',')
         disk_size[${cnt_i}]=$(lsscsi -g -s ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | rev | awk '{print $1}' | rev )
-	disk_firmware[${cnt_i}]=$(lsscsi ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | rev | awk '{print $2}' | rev )
+        disk_firmware[${cnt_i}]=$(lsscsi ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | rev | awk '{print $2}' | rev )
 
         #Check for multipath configuration
         disk_multipath[${cnt_i}]=$(find /dev/mapper -name "$(multipath -ll ${disk_path[${cnt_i}]%,*} 2>/dev/null | head -n 1 | awk '{print $1}')")
@@ -358,9 +358,11 @@ f_main()
             disk_sas_address[${cnt_i}]="N/A"
         fi
 
-	disk_root_path=$(find /sys/class/sas_device/expander*/device/phy*/port*/end_device*/sas_device/ -type d -name "end_device*" | grep ${disk_hctl[${cnt_i}]%,*})
+        disk_root_path=$(find /sys/class/sas_device/expander*/device/phy*/port*/end_device*/sas_device/ -type d -name "end_device*" | grep -Ew ${disk_hctl[${cnt_i}]/,/|})
+        disk_root_path=$(find /sys/class/sas_device/expander*/device/phy*/port*/end_device*/ -type d -name "target${disk_hctl[${cnt_i}]%,*}")
+        disk_root_path=$(dirname ${disk_root_path})
 
-        disk_enclosure_identifier[${cnt_i}]=$(cat ${disk_root_path}/enclosure_identifier | sed 's/.*0x//g')
+        disk_enclosure_identifier[${cnt_i}]=$(cat ${disk_root_path}/sas_device/end_device*/enclosure_identifier | sed 's/.*0x//g')
         if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^enclosure ${disk_enclosure_identifier[${cnt_i}]:-NULL}" ${g_map_file} 2>/dev/null) -gt 0 ]]
         then
             print_enclosure_identifier[${cnt_i}]=$(grep -E "^enclosure ${disk_enclosure_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
@@ -373,7 +375,7 @@ f_main()
             print_enclosure_identifier[${cnt_i}]="N/A"
         fi
 
-        disk_phy_identifier[${cnt_i}]=$(cat ${disk_root_path}/phy_identifier | sed 's/.*0x//g')
+        disk_phy_identifier[${cnt_i}]=$(cat ${disk_root_path}/sas_device/end_device*/phy_identifier | sed 's/.*0x//g')
         if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^phy ${disk_phy_identifier[${cnt_i}]}" ${g_map_file} 2>/dev/null) -gt 0 ]]
         then
             print_phy_identifier[${cnt_i}]=$(grep -E "^phy ${disk_phy_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
@@ -386,7 +388,7 @@ f_main()
             print_phy_identifier[${cnt_i}]="N/A"
         fi
 
-        disk_bay_identifier[${cnt_i}]=$(cat ${disk_root_path}/bay_identifier | sed 's/.*0x//g')
+        disk_bay_identifier[${cnt_i}]=$(cat ${disk_root_path}/sas_device/end_device*/bay_identifier | sed 's/.*0x//g')
         if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^bay ${disk_bay_identifier[${cnt_i}]}" ${g_map_file} 2>/dev/null) -gt 0 ]]
         then
             print_bay_identifier[${cnt_i}]=$(grep -E "^bay ${disk_bay_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
