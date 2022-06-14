@@ -358,7 +358,9 @@ f_main()
             disk_sas_address[${cnt_i}]="N/A"
         fi
 
-        disk_enclosure_identifier[${cnt_i}]=$(cat /sys/class/sas_device/expander*/device/phy-${disk_hctl[${cnt_i}]%,*}/port*/end_device*/sas_device/end_device*/enclosure_identifier | sed 's/.*0x//g')
+	disk_root_path=$(find /sys/class/sas_device/expander*/device/phy*/port*/end_device*/sas_device/ -type d -name "end_device*" | grep ${disk_hctl[${cnt_i}]%,*})
+
+        disk_enclosure_identifier[${cnt_i}]=$(cat ${disk_root_path}/enclosure_identifier | sed 's/.*0x//g')
         if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^enclosure ${disk_enclosure_identifier[${cnt_i}]:-NULL}" ${g_map_file} 2>/dev/null) -gt 0 ]]
         then
             print_enclosure_identifier[${cnt_i}]=$(grep -E "^enclosure ${disk_enclosure_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
@@ -371,7 +373,7 @@ f_main()
             print_enclosure_identifier[${cnt_i}]="N/A"
         fi
 
-        disk_phy_identifier[${cnt_i}]=$(cat /sys/class/sas_device/expander*/device/phy-${disk_hctl[${cnt_i}]%,*}/port*/end_device*/sas_device/end_device*/phy_identifier | sed 's/.*0x//g')
+        disk_phy_identifier[${cnt_i}]=$(cat ${disk_root_path}/phy_identifier | sed 's/.*0x//g')
         if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^phy ${disk_phy_identifier[${cnt_i}]}" ${g_map_file} 2>/dev/null) -gt 0 ]]
         then
             print_phy_identifier[${cnt_i}]=$(grep -E "^phy ${disk_phy_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
@@ -384,7 +386,7 @@ f_main()
             print_phy_identifier[${cnt_i}]="N/A"
         fi
 
-        disk_bay_identifier[${cnt_i}]=$(cat /sys/class/sas_device/expander*/device/phy-${disk_hctl[${cnt_i}]%,*}/port*/end_device*/sas_device/end_device*/bay_identifier | sed 's/.*0x//g')
+        disk_bay_identifier[${cnt_i}]=$(cat ${disk_root_path}/bay_identifier | sed 's/.*0x//g')
         if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^bay ${disk_bay_identifier[${cnt_i}]}" ${g_map_file} 2>/dev/null) -gt 0 ]]
         then
             print_bay_identifier[${cnt_i}]=$(grep -E "^bay ${disk_bay_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
