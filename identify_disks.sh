@@ -8,7 +8,7 @@
 #--------------------------------------------------------------------------
 
 #Variable to keep track of version for auditing purposes
-script_version=1.3.0
+script_version=1.3.1
 
 #Set environment options
 #set -o errexit      # -e Any non-zero output will cause an automatic script failure
@@ -265,7 +265,7 @@ f_main()
     fi
 
     #Find hardware information
-    enclosure_identifiers=($(lsscsi --transport -L 2>/dev/null | grep -E 'enclosure_identifier' | sed 's/.*=0x//g' | sort -u))
+    enclosure_identifiers=($(find /sys/class/sas_device/expander*/device/port*/end_device*/ -name "enclosure_identifier" -exec cat {} \; | sed 's/.*0x//g' | sort -u))
 
     original_ifs=$IFS
     IFS='!'
