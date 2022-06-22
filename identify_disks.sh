@@ -8,7 +8,7 @@
 #--------------------------------------------------------------------------
 
 #Variable to keep track of version for auditing purposes
-script_version=1.3.1
+script_version=1.3.2
 
 #Set environment options
 #set -o errexit      # -e Any non-zero output will cause an automatic script failure
@@ -358,11 +358,11 @@ f_main()
             disk_sas_address[${cnt_i}]="N/A"
         fi
 
-        disk_root_path=$(find /sys/class/sas_device/expander*/device/phy*/port*/end_device*/sas_device/ -type d -name "end_device*" | grep -Ew ${disk_hctl[${cnt_i}]/,/|})
-        disk_root_path=$(find /sys/class/sas_device/expander*/device/phy*/port*/end_device*/ -type d -name "target${disk_hctl[${cnt_i}]%,*}")
-        disk_root_path=$(dirname ${disk_root_path})
+        disk_root_path=$(find /sys/class/sas_device/expander*/device/phy*/port*/end_device*/sas_device/ -type d -name "end_device*" 2>/dev/null| grep -Ew ${disk_hctl[${cnt_i}]/,/|})
+        disk_root_path=$(find /sys/class/sas_device/expander*/device/phy*/port*/end_device*/ -type d -name "target${disk_hctl[${cnt_i}]%,*}" 2>/dev/null)
+        disk_root_path=$(dirname ${disk_root_path} 2>/dev/null)
 
-        disk_enclosure_identifier[${cnt_i}]=$(cat ${disk_root_path}/sas_device/end_device*/enclosure_identifier | sed 's/.*0x//g')
+        disk_enclosure_identifier[${cnt_i}]=$(cat ${disk_root_path}/sas_device/end_device*/enclosure_identifier 2>/dev/null | sed 's/.*0x//g')
         if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^enclosure ${disk_enclosure_identifier[${cnt_i}]:-NULL}" ${g_map_file} 2>/dev/null) -gt 0 ]]
         then
             print_enclosure_identifier[${cnt_i}]=$(grep -E "^enclosure ${disk_enclosure_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
@@ -375,7 +375,7 @@ f_main()
             print_enclosure_identifier[${cnt_i}]="N/A"
         fi
 
-        disk_phy_identifier[${cnt_i}]=$(cat ${disk_root_path}/sas_device/end_device*/phy_identifier | sed 's/.*0x//g')
+        disk_phy_identifier[${cnt_i}]=$(cat ${disk_root_path}/sas_device/end_device*/phy_identifier 2>/dev/null | sed 's/.*0x//g')
         if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^phy ${disk_phy_identifier[${cnt_i}]}" ${g_map_file} 2>/dev/null) -gt 0 ]]
         then
             print_phy_identifier[${cnt_i}]=$(grep -E "^phy ${disk_phy_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
@@ -388,7 +388,7 @@ f_main()
             print_phy_identifier[${cnt_i}]="N/A"
         fi
 
-        disk_bay_identifier[${cnt_i}]=$(cat ${disk_root_path}/sas_device/end_device*/bay_identifier | sed 's/.*0x//g')
+        disk_bay_identifier[${cnt_i}]=$(cat ${disk_root_path}/sas_device/end_device*/bay_identifier 2>/dev/null | sed 's/.*0x//g')
         if [[ -n ${g_map_file} ]] && [[ $(grep -Ec "^bay ${disk_bay_identifier[${cnt_i}]}" ${g_map_file} 2>/dev/null) -gt 0 ]]
         then
             print_bay_identifier[${cnt_i}]=$(grep -E "^bay ${disk_bay_identifier[${cnt_i}]}" ${g_map_file} | awk '{print $3}')
