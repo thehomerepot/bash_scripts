@@ -8,7 +8,7 @@
 #--------------------------------------------------------------------------
 
 #Variable to keep track of version for auditing purposes
-script_version=1.3.2
+script_version=1.3.3
 
 #Set environment options
 #set -o errexit      # -e Any non-zero output will cause an automatic script failure
