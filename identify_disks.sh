@@ -346,10 +346,10 @@ f_main()
         disk_bus[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'ID_BUS=[^.]\+' | cut -d'=' -f2)
         if [[ "${disk_bus[${cnt_i}]}" = "scsi" ]]
         then
-            disk_serial[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'SCSI_IDENT_SERIAL=[^.]\+' | cut -d'=' -f2)
+            disk_serial[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'SCSI_IDENT_SERIAL=[^.]\+' | cut -d'=' -f2 | cut -c 1-8)
         elif [[ "${disk_bus[${cnt_i}]}" = "ata" ]]
         then
-            disk_serial[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'ID_SERIAL_SHORT=[^.]\+' | cut -d'=' -f2)
+            disk_serial[${cnt_i}]=$(udevadm info --query=all --name=${disk_path[${cnt_i}]%,*} | grep -o 'ID_SERIAL_SHORT=[^.]\+' | cut -d'=' -f2 | cut -c 1-8)
         fi
 
         disk_sas_address[${cnt_i}]=$(lsscsi --transport -L ${disk_hctl[${cnt_i}]%,*} 2>/dev/null | grep -E 'sas_address' | sed 's/.*=0x//g')
