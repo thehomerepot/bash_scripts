@@ -8,7 +8,7 @@
 #--------------------------------------------------------------------------
 
 #Variable to keep track of version for auditing purposes
-script_version=1.3.3
+script_version=1.3.4
 
 #Set environment options
 #set -o errexit      # -e Any non-zero output will cause an automatic script failure
@@ -269,11 +269,11 @@ f_main()
 
     original_ifs=$IFS
     IFS='!'
-    disk_wwn=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'WWN="[^"]*["$]' | cut -d'"' -f2 | tr '\n' '!'))
-    disk_sector_physical=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'PHY-SEC="[^"]*["$]' | cut -d'"' -f2 | tr '\n' '!'))
-    disk_sector_logical=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'LOG-SEC="[^"]*["$]' | cut -d'"' -f2 | tr '\n' '!'))
-    disk_transport=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'TRAN="[^"]*["$]' | cut -d'"' -f2 | tr '\n' '!'))
-    disk_model=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'MODEL="[^"]*["$]' | cut -d'"' -f2 | tr -d ' ' | tr '\n' '!'))
+    disk_wwn=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -Ev 'WWN=""|nvme' | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'WWN="[^"]*["$]' | cut -d'"' -f2 | tr '\n' '!'))
+    disk_sector_physical=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -Ev 'WWN=""|nvme' | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'PHY-SEC="[^"]*["$]' | cut -d'"' -f2 | tr '\n' '!'))
+    disk_sector_logical=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -Ev 'WWN=""|nvme' | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'LOG-SEC="[^"]*["$]' | cut -d'"' -f2 | tr '\n' '!'))
+    disk_transport=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -Ev 'WWN=""|nvme' | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'TRAN="[^"]*["$]' | cut -d'"' -f2 | tr '\n' '!'))
+    disk_model=($(lsblk --paths --nodeps --pairs --output WWN,TYPE,PHY-SEC,LOG-SEC,TRAN,MODEL | grep -Ev 'WWN=""|nvme' | grep -E 'TYPE="disk"' | sed 's/0x//g' | sort -u | grep -o 'MODEL="[^"]*["$]' | cut -d'"' -f2 | tr -d ' ' | tr '\n' '!'))
     IFS=$original_ifs
 
     #Create a temp file for output
